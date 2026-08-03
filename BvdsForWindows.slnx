@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BvdsForWindows.Core/BvdsForWindows.Core.csproj" />
+    <Project Path="src/BvdsForWindows/BvdsForWindows.csproj" />
+  </Folder>
+</Solution>

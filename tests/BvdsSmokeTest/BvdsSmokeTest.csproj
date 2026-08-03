@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>BvdsSmokeTest</AssemblyName>
+    <RootNamespace>BvdsSmokeTest</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\src\BvdsForWindows\Core\*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\BvdsForWindows.Core\BvdsForWindows.Core.csproj" />
+  </ItemGroup>
+</Project>

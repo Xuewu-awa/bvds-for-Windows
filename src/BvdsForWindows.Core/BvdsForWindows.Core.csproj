@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BvdsForWindows.Core</RootNamespace>
+    <AssemblyName>BvdsForWindows.Core</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="QRCoder" Version="1.8.0"/>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\tools\ffmpeg\ffmpeg.exe" Link="tools\ffmpeg\ffmpeg.exe" CopyToOutputDirectory="PreserveNewest"/>
+  </ItemGroup>
+</Project>

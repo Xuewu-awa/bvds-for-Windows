@@ -1,0 +1,88 @@
+<UserControl x:Class="BvdsForWindows.Views.TasksView" Style="{StaticResource PageInStyle}"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:BvdsForWindows.ViewModels">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,14">
+            <TextBlock Text="下载任务" FontSize="17" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            <Button Content="清理已完成" Style="{StaticResource GhostButton}" Margin="14,0,0,0"
+                    Padding="12,6" MinHeight="0" FontSize="11" Command="{Binding ClearDoneCmd}"/>
+        </StackPanel>
+
+        <ListBox Grid.Row="1" ItemsSource="{Binding Tasks}" ScrollViewer.VerticalScrollBarVisibility="Auto">
+            <ListBox.ItemContainerStyle>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="Margin" Value="0,0,0,10"/>
+                    <Setter Property="Focusable" Value="False"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListBoxItem">
+                                <ContentPresenter/>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </ListBox.ItemContainerStyle>
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <!-- kt 版 task-item 卡片 -->
+                    <Border Style="{StaticResource CardBorder}" Padding="16,12">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="{Binding Title}" FontSize="13" FontWeight="Medium"
+                                               TextTrimming="CharacterEllipsis" Margin="0,0,12,0"/>
+                                    <TextBlock Text="{Binding QualityName}" Foreground="{StaticResource TextDimBrush}"
+                                               FontSize="10" Margin="0,3,0,0"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <!-- 状态胶囊 -->
+                                    <Border CornerRadius="99" Padding="9,3" Margin="0,0,8,0"
+                                            Background="{Binding StatusBg}" BorderThickness="0">
+                                        <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusColor}"
+                                                   FontSize="10" FontWeight="SemiBold"/>
+                                    </Border>
+                                    <Button Content="选择分P" Style="{StaticResource GhostButton}" Padding="9,4"
+                                            MinHeight="0" FontSize="10"
+                                            Visibility="{Binding IsSelecting, Converter={x:Static vm:BoolToVis.Instance}}"
+                                            Command="{Binding SelectCmd}"/>
+                                    <Button Content="重试" Style="{StaticResource GhostButton}" Padding="9,4"
+                                            MinHeight="0" FontSize="10" Margin="6,0,0,0"
+                                            Visibility="{Binding HasError, Converter={x:Static vm:BoolToVis.Instance}}"
+                                            Command="{Binding RetryCmd}"/>
+                                    <Button Content="打开文件夹" Style="{StaticResource GhostButton}" Padding="9,4"
+                                            MinHeight="0" FontSize="10" Margin="6,0,0,0"
+                                            Visibility="{Binding ShowOpenFolder, Converter={x:Static vm:BoolToVis.Instance}}"
+                                            Command="{Binding OpenFolderCmd}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- kt 版细圆角进度条 -->
+                            <ProgressBar Height="4" Margin="0,10,0,0" Minimum="0" Maximum="100"
+                                         Value="{Binding Progress, Mode=OneWay}"
+                                         Foreground="{DynamicResource AccentBrush}"
+                                         Background="{StaticResource BorderBrush}" BorderThickness="0"
+                                         Visibility="{Binding ShowProgress, Converter={x:Static vm:BoolToVis.Instance}}"/>
+
+                            <TextBlock Text="{Binding Error}" Foreground="{StaticResource DangerBrush}" FontSize="10"
+                                       TextWrapping="Wrap" Margin="0,6,0,0"
+                                       Visibility="{Binding HasError, Converter={x:Static vm:BoolToVis.Instance}}"/>
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </Grid>
+</UserControl>
