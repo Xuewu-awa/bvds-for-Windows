@@ -1,6 +1,6 @@
 # bvds-for-windows — B站视频下载器 (Windows)
 
-Android 版 [bvds](../bvds) 的 **C# 全量重写版**。WPF 原生界面，业务逻辑全部用 C# 实现（含前端）。
+Android 版 [bvds](https://github.com/Xuewu-awa/bvds-for-Android) 的 **C# 全量重写版**。WPF 原生界面，业务逻辑全部用 C# 实现（含前端）。
 
 ## 技术栈
 
