@@ -10,6 +10,7 @@
     <PackageReference Include="QRCoder" Version="1.8.0"/>
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\tools\ffmpeg\ffmpeg.exe" Link="tools\ffmpeg\ffmpeg.exe" CopyToOutputDirectory="PreserveNewest"/>
+    <None Include="..\..\tools\ffmpeg\ffmpeg.exe" Link="tools\ffmpeg\ffmpeg.exe"
+          CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true"/>
   </ItemGroup>
 </Project>
