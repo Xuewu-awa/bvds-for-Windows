@@ -17,7 +17,7 @@ public sealed class DownloadTask
     public required string Id { get; init; }
     public string Title { get; set; } = "";
     public required string Url { get; init; }
-    /// <summary>"1"=仅视频 "2"=仅音频 "3"=音视频合轨</summary>
+    /// <summary>"1"=仅视频 "2"=仅音频 "3"=音视频合轨 "4"=仅封面</summary>
     public required string Mode { get; init; }
     public required string Quality { get; init; }
 
@@ -32,6 +32,7 @@ public sealed class DownloadTask
     public volatile List<VideoParserPage>? PendingPages; // 分P暂存
     public volatile string VideoUrl = "";      // 解析结果
     public volatile string AudioUrl = "";      // 解析结果
+    public volatile string CoverUrl = "";      // 解析结果：封面图地址
 }
 
 /// <summary>分P/分集（对应 Kotlin VideoParserPage / Page）</summary>
@@ -54,6 +55,8 @@ public sealed record VideoInfo
     public string VideoUrl { get; init; } = "";
     public string AudioUrl { get; init; } = "";
     public string Bvid { get; init; } = "";
+    /// <summary>封面图地址（已规范化为 https 原图）</summary>
+    public string CoverUrl { get; init; } = "";
     public List<VideoParserPage> Pages { get; init; } = new();
     public string? Error { get; init; }
     public bool Ok => Error == null && !string.IsNullOrWhiteSpace(VideoUrl);

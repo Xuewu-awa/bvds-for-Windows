@@ -29,3 +29,6 @@ bvds/
 /SettingsView.xaml.cs
 /TasksView.xaml
 /TasksView.xaml.cs
+
+# release artifacts (do not commit)
+dist/

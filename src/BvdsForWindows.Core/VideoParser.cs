@@ -46,6 +46,10 @@ public sealed class VideoParser
         var title = ExtractTitle(html);
         _log(taskId, $"标题={title}", false);
 
+        // 2.2 封面图（独立提取，任何播放路径成功都带上）
+        var cover = ExtractCover(html);
+        if (!string.IsNullOrWhiteSpace(cover)) _log(taskId, $"封面={cover}", false);
+
         // 2.5 分P列表 + bvid（独立提取，任何播放路径成功都带上）
         var pages = ExtractPages(html);
         var bvid = ExtractBvid(html, finalUrl);
@@ -76,10 +80,10 @@ public sealed class VideoParser
                 if (epList.Count > 1)
                 {
                     _log(taskId, $"整季 epList: {epList.Count} 集", false);
-                    return new VideoInfo { Title = title, SourceId = sid, Pages = epList };
+                    return new VideoInfo { Title = title, SourceId = sid, Pages = epList, CoverUrl = cover };
                 }
                 var dash = await FetchPgcAsync(epId, qualityCode, taskId, ct);
-                return new VideoInfo { Title = title, SourceId = sid, VideoUrl = dash.VideoUrl, AudioUrl = dash.AudioUrl };
+                return new VideoInfo { Title = title, SourceId = sid, VideoUrl = dash.VideoUrl, AudioUrl = dash.AudioUrl, CoverUrl = cover };
             }
         }
 
@@ -89,7 +93,7 @@ public sealed class VideoParser
         if (pi != null)
         {
             _log(taskId, "__playinfo__ 解析成功", false);
-            return new VideoInfo { Title = title, SourceId = sid, VideoUrl = pi.VideoUrl, AudioUrl = pi.AudioUrl, Bvid = bvid, Pages = pages };
+            return new VideoInfo { Title = title, SourceId = sid, VideoUrl = pi.VideoUrl, AudioUrl = pi.AudioUrl, Bvid = bvid, CoverUrl = cover, Pages = pages };
         }
 
         // 6. __INITIAL_STATE__ → 播放 API
@@ -102,6 +106,7 @@ public sealed class VideoParser
                 Title = string.IsNullOrWhiteSpace(api.Title) ? title : api.Title,
                 SourceId = sid,
                 Bvid = bvid,
+                CoverUrl = cover,
                 Pages = pages,
             };
         }
@@ -110,7 +115,7 @@ public sealed class VideoParser
         var init = ExtractFromInitialState(html, qualityCode, taskId);
         if (init != null)
         {
-            return new VideoInfo { Title = title, SourceId = sid, VideoUrl = init.VideoUrl, AudioUrl = init.AudioUrl, Bvid = bvid, Pages = pages };
+            return new VideoInfo { Title = title, SourceId = sid, VideoUrl = init.VideoUrl, AudioUrl = init.AudioUrl, Bvid = bvid, CoverUrl = cover, Pages = pages };
         }
 
         _log(taskId, "所有解析方式均失败", true);
@@ -244,9 +249,129 @@ public sealed class VideoParser
     private string ExtractTitle(string html)
     {
         var m = RegexCache.Title().Match(html);
-        if (!m.Success) return "未知标题";
-        var t = m.Groups[1].Value.Replace("_哔哩哔哩_bilibili", "").Trim();
+        return m.Success ? CleanTitle(m.Groups[1].Value) : "未知标题";
+    }
+
+    /// <summary>
+    /// 清洗 &lt;title&gt; 文本，剥掉 B站站点后缀，得到可读标题 / 文件名。
+    /// 覆盖两种页面形态：
+    ///   普通视频  "标题_哔哩哔哩_bilibili"
+    ///   番剧影视  "标题-番剧-全集-高清正版在线观看-bilibili-哔哩哔哩"
+    /// </summary>
+    public static string CleanTitle(string raw)
+    {
+        var t = raw.Trim();
+        var cut = t.Length;
+
+        // 1. 站点名后缀（取最早出现的一个）
+        foreach (var marker in new[] { "_哔哩哔哩", "-哔哩哔哩", "_bilibili", "-bilibili" })
+        {
+            var i = t.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (i >= 0 && i < cut) cut = i;
+        }
+
+        // 2. 番剧/影视页的栏目描述后缀（-番剧-全集-高清正版在线观看-…）
+        var pgc = RegexCache.PgcTail().Match(t);
+        if (pgc.Success && pgc.Index < cut) cut = pgc.Index;
+
+        t = t[..cut].Trim().TrimEnd('-', '_', '|', ' ', '　').Trim();
         return string.IsNullOrWhiteSpace(t) ? "未知标题" : t;
+    }
+
+    /// <summary>从 HTML 提取封面图地址：__INITIAL_STATE__ 多路径 → meta 标签兜底</summary>
+    private string ExtractCover(string html)
+    {
+        var stateJson = ExtractJsonAfterAssignment(html, "__INITIAL_STATE__");
+        if (stateJson != null)
+        {
+            try
+            {
+                using var state = JsonDocument.Parse(stateJson);
+                var cover = FindCover(state.RootElement);
+                if (!string.IsNullOrWhiteSpace(cover)) return NormalizeImageUrl(cover);
+            }
+            catch { /* 解析失败则走 meta 兜底 */ }
+        }
+
+        // 新版番剧页等无 __INITIAL_STATE__ 的场景：og:image / itemprop=image
+        // meta 标签属性顺序不固定，先取整个标签再取其中的 content
+        var tags = RegexCache.MetaTag().Matches(html);
+        for (var i = 0; i < tags.Count; i++)
+        {
+            var tag = tags[i].Value;
+            if (tag.IndexOf("og:image", StringComparison.OrdinalIgnoreCase) < 0 &&
+                tag.IndexOf("twitter:image", StringComparison.OrdinalIgnoreCase) < 0 &&
+                tag.IndexOf("itemprop=\"image\"", StringComparison.OrdinalIgnoreCase) < 0 &&
+                tag.IndexOf("itemprop='image'", StringComparison.OrdinalIgnoreCase) < 0)
+                continue;
+            var cm = RegexCache.MetaContent().Match(tag);
+            if (cm.Success) return NormalizeImageUrl(cm.Groups[1].Value);
+        }
+        return "";
+    }
+
+    /// <summary>按已知页面结构查找封面字段（普通视频 / 番剧 / 影视 / 整季列表）</summary>
+    private static string FindCover(JsonElement root)
+    {
+        // 普通视频：videoData.pic
+        if (root.TryGetProperty("videoData", out var vd))
+        {
+            var pic = GetString(vd, "pic");
+            if (!string.IsNullOrWhiteSpace(pic)) return pic;
+        }
+
+        // 番剧/影视单集：epInfo.cover
+        if (root.TryGetProperty("epInfo", out var epInfo))
+        {
+            var c = GetString(epInfo, "cover");
+            if (!string.IsNullOrWhiteSpace(c)) return c;
+        }
+
+        // 番剧/影视整季：mediaInfo.cover
+        if (root.TryGetProperty("mediaInfo", out var mediaInfo))
+        {
+            var c = GetString(mediaInfo, "cover");
+            if (!string.IsNullOrWhiteSpace(c)) return c;
+        }
+
+        // 新版番剧页：sections[].episodes[].cover
+        if (root.TryGetProperty("sections", out var sections) && sections.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var section in sections.EnumerateArray())
+            {
+                if (!section.TryGetProperty("episodes", out var episodes) ||
+                    episodes.ValueKind != JsonValueKind.Array) continue;
+                foreach (var episode in episodes.EnumerateArray())
+                {
+                    var c = GetString(episode, "cover");
+                    if (!string.IsNullOrWhiteSpace(c)) return c;
+                }
+            }
+        }
+
+        // 兜底：顶层 cover / pic
+        var top = GetString(root, "cover");
+        return string.IsNullOrWhiteSpace(top) ? GetString(root, "pic") : top;
+    }
+
+    /// <summary>规范化封面地址：补协议、http→https、剥离缩放后缀取原图</summary>
+    private static string NormalizeImageUrl(string url)
+    {
+        var u = url.Trim();
+        if (u.Length == 0) return "";
+        if (u.StartsWith("//", StringComparison.Ordinal)) u = "https:" + u;
+        if (u.StartsWith("http://", StringComparison.OrdinalIgnoreCase)) u = "https://" + u[7..];
+
+        // 剥离 @480w_270h_1c.webp 这类缩放/格式后缀，拿原图
+        var at = u.IndexOf('@');
+        if (at > 0)
+        {
+            var suffix = u[(at + 1)..];
+            if (suffix.Contains("w_") || suffix.Contains("h_") ||
+                suffix.Contains(".webp") || suffix.Contains(".avif"))
+                u = u[..at];
+        }
+        return u;
     }
 
     private string ExtractSourceId(string url)
@@ -635,4 +760,16 @@ internal static partial class RegexCache
 
     [System.Text.RegularExpressions.GeneratedRegex(@"[?&]p=(\d+)")]
     public static partial System.Text.RegularExpressions.Regex ParamP();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"<meta\b[^>]*>", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    public static partial System.Text.RegularExpressions.Regex MetaTag();
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"content\s*=\s*[""']([^""']+)[""']", System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    public static partial System.Text.RegularExpressions.Regex MetaContent();
+
+    /// <summary>番剧/影视页标题里的栏目描述段（-番剧-全集-… / -电影-高清完整版-…）</summary>
+    [System.Text.RegularExpressions.GeneratedRegex(
+        @"[-_](?:番剧|电影|电视剧|纪录片|国创|综艺|动画|影视|漫画)(?=[-_])",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase)]
+    public static partial System.Text.RegularExpressions.Regex PgcTail();
 }

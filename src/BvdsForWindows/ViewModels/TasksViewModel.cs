@@ -68,6 +68,7 @@ public sealed class TaskItemViewModel : ViewModelBase
     private bool _hasError;
     private bool _isSelecting;
     private bool _showOpenFolder;
+    private bool _showDownloadCover;
 
     public string Id => _task.Id;
     public string Title { get => _title; private set => Set(ref _title, value); }
@@ -81,13 +82,17 @@ public sealed class TaskItemViewModel : ViewModelBase
     public bool HasError { get => _hasError; private set => Set(ref _hasError, value); }
     public bool IsSelecting { get => _isSelecting; private set => Set(ref _isSelecting, value); }
     public bool ShowOpenFolder { get => _showOpenFolder; private set => Set(ref _showOpenFolder, value); }
+    /// <summary>已解析到封面且不是「仅封面」任务 → 显示一键补下封面按钮</summary>
+    public bool ShowDownloadCover { get => _showDownloadCover; private set => Set(ref _showDownloadCover, value); }
 
-    public string QualityName => ConfigStore.QualityNames.TryGetValue(
-        ConfigStore.QualityCode(_task.Quality), out var n) ? n : _task.Quality;
+    public string QualityName => _task.Mode == "4"
+        ? "封面图"
+        : ConfigStore.QualityNames.TryGetValue(ConfigStore.QualityCode(_task.Quality), out var n) ? n : _task.Quality;
 
     public RelayCommand SelectCmd { get; }
     public RelayCommand RetryCmd { get; }
     public RelayCommand OpenFolderCmd { get; }
+    public RelayCommand DownloadCoverCmd { get; }
 
     public TaskItemViewModel(BvdsService service, DownloadTask task)
     {
@@ -95,6 +100,7 @@ public sealed class TaskItemViewModel : ViewModelBase
         _task = task;
         SelectCmd = new RelayCommand(_ => ShowSelection());
         RetryCmd = new RelayCommand(_ => _service.RetryTask(_task.Id));
+        DownloadCoverCmd = new RelayCommand(_ => _service.DownloadCoverForTask(_task.Id));
         OpenFolderCmd = new RelayCommand(_ =>
         {
             var dir = System.IO.Path.GetDirectoryName(_task.DestPath);
@@ -150,5 +156,6 @@ public sealed class TaskItemViewModel : ViewModelBase
         HasError = task.Error.Length > 0;
         IsSelecting = status == TaskStatus.Selecting;
         ShowOpenFolder = status == TaskStatus.Done && task.DestPath.Length > 0;
+        ShowDownloadCover = task.Mode != "4" && task.CoverUrl.Length > 0;
     }
 }

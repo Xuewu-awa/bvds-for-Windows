@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 
 namespace BvdsForWindows.Core;
 
@@ -96,8 +96,8 @@ public sealed class BvdsService : IDisposable
     {
         Config.Quality = quality;
 
-        // 360P 以上需要登录
-        if (quality != "5")
+        // 360P 以上需要登录（封面是公开资源，无需登录）
+        if (quality != "5" && mode != "4")
         {
             var loginResult = await Login.CheckLoginAsync();
             if (loginResult is LoginResult.Guest)
@@ -146,29 +146,74 @@ public sealed class BvdsService : IDisposable
     public void RetryTask(string taskId) => Scheduler.Retry(taskId);
     public void ClearTasks() => Scheduler.ClearDone();
 
+    /// <summary>为已解析出封面的任务单独补下一个封面（任务列表「下载封面」按钮）</summary>
+    public (bool Ok, string Message) DownloadCoverForTask(string taskId)
+    {
+        var src = Scheduler.All.FirstOrDefault(t => t.Id == taskId);
+        if (src == null) return (false, "任务不存在");
+        if (string.IsNullOrWhiteSpace(src.CoverUrl)) return (false, "该任务还没有解析到封面");
+
+        Scheduler.Submit(new[]
+        {
+            new DownloadTask
+            {
+                Id = $"cover_{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}_{Guid.NewGuid().ToString("N")[..6]}",
+                Title = src.Title,
+                Url = src.Url,
+                Mode = "4",
+                Quality = src.Quality,
+                CoverUrl = src.CoverUrl,
+            }
+        });
+        return (true, "已添加封面下载任务");
+    }
+
     // ── 内部：任务执行协调器（对应 handleTaskExecution） ──
 
     private async Task<TaskResult> HandleTaskExecutionAsync(DownloadTask task, CancellationToken ct)
     {
         try
         {
-            // 1. 视频解析（番剧按 epId 走 PGC 通道；分P按 bvid+cid；普通走 URL）
-            Logger.Log(task.Id, $"开始解析 {task.Url}");
             VideoInfo info;
-            if (task.EpId > 0)
-                info = await _parser.FetchByEpIdAsync(task.EpId, task.Quality, task.Id, ct);
-            else if (task.Cid > 0 && !string.IsNullOrWhiteSpace(task.Bvid))
-                info = await _parser.FetchByCidAsync(task.Bvid, task.Cid, task.Quality, task.Id, ct);
+
+            // 0. 封面任务且已带封面地址（任务列表「下载封面」一键触发）→ 免解析直下
+            if (task.Mode == "4" && !string.IsNullOrWhiteSpace(task.CoverUrl))
+            {
+                Logger.Log(task.Id, $"使用已解析的封面地址 {task.CoverUrl}");
+                info = new VideoInfo { Title = task.Title, CoverUrl = task.CoverUrl };
+            }
+            // 1. 视频解析（番剧按 epId 走 PGC 通道；分P按 bvid+cid；普通走 URL）
             else
-                info = await _parser.FetchByUrlAsync(task.Url, task.Quality, task.Id, ct);
+            {
+                Logger.Log(task.Id, $"开始解析 {task.Url}");
+                if (task.EpId > 0)
+                    info = await _parser.FetchByEpIdAsync(task.EpId, task.Quality, task.Id, ct);
+                else if (task.Cid > 0 && !string.IsNullOrWhiteSpace(task.Bvid))
+                    info = await _parser.FetchByCidAsync(task.Bvid, task.Cid, task.Quality, task.Id, ct);
+                else
+                    info = await _parser.FetchByUrlAsync(task.Url, task.Quality, task.Id, ct);
+            }
 
             if (info.Error != null)
                 return new TaskResult(task.Id, false, Error: info.Error);
 
-            // 更新标题
+            // 更新标题 / 封面
             if (!string.IsNullOrWhiteSpace(info.Title)) task.Title = info.Title;
             task.Bvid = info.Bvid;
+            if (!string.IsNullOrWhiteSpace(info.CoverUrl)) task.CoverUrl = info.CoverUrl;
             TasksChanged?.Invoke();
+
+            // 2. 仅封面模式：封面与分P无关，不弹选择窗，也不需要播放地址
+            if (task.Mode == "4")
+            {
+                if (string.IsNullOrWhiteSpace(task.CoverUrl))
+                    return new TaskResult(task.Id, false, Error: "未解析到视频封面");
+
+                task.DestPath = Path.Combine(Config.DownloadDir,
+                    DownloadEngine.SafeFilename(task.Title) + DownloadEngine.ImageExtension(task.CoverUrl));
+                task.Status = TaskStatus.Downloading;
+                return await _engine.ExecuteAsync(task, ct);
+            }
 
             // 分P/分集检测 → 等待用户选择（子任务已有 cid/epId 则不弹窗；番剧无 bvid 不要求）
             var hasEpisodes = info.Pages.Any(p => p.EpId > 0);
@@ -184,7 +229,7 @@ public sealed class BvdsService : IDisposable
             if (string.IsNullOrWhiteSpace(info.VideoUrl))
                 return new TaskResult(task.Id, false, Error: "无法获取视频链接");
 
-            // 2. 设置路径和 URL
+            // 3. 设置路径和 URL
             var dir = Config.DownloadDir;
             var ext = task.Mode == "2" ? ".mp3" : ".mp4";
             task.DestPath = Path.Combine(dir, DownloadEngine.SafeFilename(task.Title) + ext);
@@ -192,7 +237,7 @@ public sealed class BvdsService : IDisposable
             task.VideoUrl = info.VideoUrl;
             task.AudioUrl = info.AudioUrl;
 
-            // 3. 执行下载
+            // 4. 执行下载
             return await _engine.ExecuteAsync(task, ct);
         }
         catch (OperationCanceledException)

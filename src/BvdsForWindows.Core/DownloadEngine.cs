@@ -44,6 +44,7 @@ public sealed class DownloadEngine
             {
                 "1" => await DownloadVideoOnlyAsync(task, outFile, resume, ct),
                 "2" => await DownloadAudioOnlyAsync(task, outFile, resume, ct),
+                "4" => await DownloadCoverAsync(task, outFile, resume, ct),
                 _ => await DownloadAndMergeAsync(task, outFile, unique, resume, ct),
             };
         }
@@ -77,6 +78,20 @@ public sealed class DownloadEngine
         return ok
             ? new TaskResult(task.Id, true, m4aPath)
             : new TaskResult(task.Id, false, Error: "音频下载失败");
+    }
+
+    // ── 模式 4：仅封面 ─────────────────────────────
+
+    private async Task<TaskResult> DownloadCoverAsync(DownloadTask task, string outFile, bool resume, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(task.CoverUrl))
+            return new TaskResult(task.Id, false, Error: "未解析到视频封面");
+
+        // 封面为公开图片资源，B站 CDN 校验 Referer（DownloadFileAsync 已带）
+        var ok = await DownloadFileAsync(task.CoverUrl, outFile, task.Id, 0, 100, resume, ct);
+        return ok
+            ? new TaskResult(task.Id, true, outFile)
+            : new TaskResult(task.Id, false, Error: "封面下载失败");
     }
 
     // ── 模式 3：音视频合轨 ────────────────────────
@@ -242,6 +257,22 @@ public sealed class DownloadEngine
     private static void TryDelete(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); } catch { }
+    }
+
+    /// <summary>从图片地址推断扩展名（无法识别时用 .jpg）</summary>
+    public static string ImageExtension(string url)
+    {
+        var path = url;
+        var q = path.IndexOf('?');
+        if (q >= 0) path = path[..q];
+        var slash = path.LastIndexOf('/');
+        var name = slash >= 0 ? path[(slash + 1)..] : path;
+        var dot = name.LastIndexOf('.');
+        if (dot < 0) return ".jpg";
+        var ext = name[dot..].ToLowerInvariant();
+        return ext is ".jpg" or ".jpeg" or ".png" or ".webp" or ".gif" or ".bmp" or ".avif"
+            ? ext
+            : ".jpg";
     }
 
     public static string SafeFilename(string name)

@@ -24,6 +24,25 @@ try
     var urls = BvdsService.ExtractUrls("https://www.bilibili.com/video/BV1xx411c7mD https://b23.tv/BV1GJ411x7h7 不是链接");
     Check("ExtractUrls", urls.Count == 2, $"(count={urls.Count})");
 
+    // 2.5 标题清洗（离线）：剥掉站点后缀得到可读标题 / 文件名
+    var titleCases = new (string Raw, string Want)[]
+    {
+        ("【官方 MV】Never Gonna Give You Up - Rick Astley_哔哩哔哩_bilibili",
+            "【官方 MV】Never Gonna Give You Up - Rick Astley"),
+        ("鬼灭之刃 柱训练篇第1集-番剧-全集-高清正版在线观看-bilibili-哔哩哔哩",
+            "鬼灭之刃 柱训练篇第1集"),
+        ("某电影-电影-高清完整版在线观看-bilibili-哔哩哔哩", "某电影"),
+        ("某剧-电视剧-全集-高清正版在线观看-bilibili-哔哩哔哩", "某剧"),
+        ("标题_bilibili_哔哩哔哩", "标题"),
+        ("2024年1月番剧推荐", "2024年1月番剧推荐"),   // 无分隔符，不应被误切
+        ("_哔哩哔哩_bilibili", "未知标题"),           // 全被剥光 → 兜底
+    };
+    foreach (var (raw, want) in titleCases)
+    {
+        var got = VideoParser.CleanTitle(raw);
+        Check($"CleanTitle '{raw[..Math.Min(20, raw.Length)]}'", got == want, $"(got='{got}')");
+    }
+
     // 3. 短链解析（跟跳 + HTML 提取标题/bvid/分P）
     var parser = new VideoParser(service.CookieJar is CookieStore jar ? new ApiClient(jar) : null!, (t, m, e) => logger.Log(t, m, e));
     // 直接走 service 内部逻辑更贴近真实：用 fetchByUrl
@@ -44,6 +63,20 @@ try
         var bytes = await resp.Content.ReadAsByteArrayAsync();
         Check("RangeDownload", resp.StatusCode == System.Net.HttpStatusCode.PartialContent && bytes.Length > 0,
             $"(code={(int)resp.StatusCode}, bytes={bytes.Length})");
+
+        // 4.5 封面地址解析 + 图片可下载性（B站 CDN 校验 Referer）
+        Check("HasCoverUrl", info.CoverUrl.StartsWith("https://"), info.CoverUrl);
+        if (info.CoverUrl.StartsWith("https://"))
+        {
+            using var coverReq = new HttpRequestMessage(HttpMethod.Get, info.CoverUrl);
+            coverReq.Headers.TryAddWithoutValidation("User-Agent", ApiClient.UserAgent);
+            coverReq.Headers.TryAddWithoutValidation("Referer", "https://www.bilibili.com/");
+            using var coverResp = await http.SendAsync(coverReq);
+            var coverBytes = await coverResp.Content.ReadAsByteArrayAsync();
+            var mediaType = coverResp.Content.Headers.ContentType?.MediaType ?? "";
+            Check("CoverDownload", coverResp.IsSuccessStatusCode && mediaType.StartsWith("image/") && coverBytes.Length > 1024,
+                $"(code={(int)coverResp.StatusCode}, type={mediaType}, bytes={coverBytes.Length})");
+        }
     }
 
     // 5. 分P 识别（多P视频）
@@ -58,6 +91,39 @@ try
             var sub = await parser.FetchByCidAsync(multi.Bvid, page2.Cid, "5", "t3");
             Check("FetchByCid", sub.Ok && sub.VideoUrl.StartsWith("http"), $"(cid={page2.Cid})");
         }
+    }
+
+    // 7. 仅封面模式端到端：提交任务 → 等调度器跑完 → 校验落盘图片
+    var origDir = service.Config.DownloadDir;
+    var coverDir = Path.Combine(Path.GetTempPath(), "bvds_cover_test");
+    service.Config.DownloadDir = coverDir;
+    try
+    {
+        var (submitted, msg) = await service.StartDownloadAsync(
+            "https://www.bilibili.com/video/BV1GJ411x7h7", "4", "5");
+        Check("CoverTaskSubmit", submitted, msg);
+
+        DownloadTask? task = null;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        while (sw.Elapsed < TimeSpan.FromSeconds(90))
+        {
+            task = service.Scheduler.All.FirstOrDefault();
+            if (task is { Status: BvdsForWindows.Core.TaskStatus.Done or BvdsForWindows.Core.TaskStatus.Failed })
+                break;
+            await Task.Delay(500);
+        }
+
+        Check("CoverTaskDone", task?.Status == BvdsForWindows.Core.TaskStatus.Done,
+            $"(status={task?.Status}, error={task?.Error})");
+
+        var fileOk = task is { Status: BvdsForWindows.Core.TaskStatus.Done } &&
+                     File.Exists(task.DestPath) && new FileInfo(task.DestPath).Length > 1024;
+        Check("CoverFileSaved", fileOk, $"(path={task?.DestPath})");
+    }
+    finally
+    {
+        service.Config.DownloadDir = origDir;
+        try { if (Directory.Exists(coverDir)) Directory.Delete(coverDir, true); } catch { }
     }
 }
 catch (Exception e)

@@ -25,13 +25,15 @@
                     <TextBlock Text="下载模式" Style="{StaticResource CardTitle}"/>
                     <Border Background="{StaticResource BgBrush}" BorderBrush="{StaticResource BorderBrush}"
                             BorderThickness="1" CornerRadius="5" Padding="3">
-                        <UniformGrid Columns="3">
+                        <UniformGrid Columns="4">
                             <RadioButton Content="视频 + 音频合轨" Style="{StaticResource SegmentButton}"
                                          IsChecked="{Binding Mode, Converter={StaticResource StrEq}, ConverterParameter=3}"/>
                             <RadioButton Content="仅视频" Style="{StaticResource SegmentButton}"
                                          IsChecked="{Binding Mode, Converter={StaticResource StrEq}, ConverterParameter=1}"/>
                             <RadioButton Content="仅音频" Style="{StaticResource SegmentButton}"
                                          IsChecked="{Binding Mode, Converter={StaticResource StrEq}, ConverterParameter=2}"/>
+                            <RadioButton Content="仅封面" Style="{StaticResource SegmentButton}"
+                                         IsChecked="{Binding Mode, Converter={StaticResource StrEq}, ConverterParameter=4}"/>
                         </UniformGrid>
                     </Border>
 
@@ -51,8 +53,8 @@
                                          IsChecked="{Binding Quality, Converter={StaticResource StrEq}, ConverterParameter=5}"/>
                         </UniformGrid>
                     </Border>
-                    <TextBlock Text="360P 以上画质需要扫码登录" Foreground="{StaticResource TextDimBrush}"
-                               FontSize="10" Margin="0,6,0,0"/>
+                    <TextBlock Text="360P 以上画质需要扫码登录；「仅封面」为公开图片，无需登录" Foreground="{StaticResource TextDimBrush}"
+                               FontSize="10" Margin="0,6,0,0" TextWrapping="Wrap"/>
                 </StackPanel>
             </Border>
 
